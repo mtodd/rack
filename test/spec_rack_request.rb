@@ -449,4 +449,19 @@ EOF
     rack_request_object_id.should.be.equal env['rack.request'].object_id
     req2.should.equal env['rack.request']
   end
+
+  specify "allows subclasses to override the memoized instance" do
+    class BlahRequest < Rack::Request; end
+    env = Rack::MockRequest.env_for("http://example.com:8080/")
+    env['rack.request'].should.be.nil
+    
+    Rack::Request.new(env)
+    env['rack.request'].class.should.equal Rack::Request
+    
+    BlahRequest.new(env)
+    env['rack.request'].class.should.equal BlahRequest
+    
+    Rack::Request.new(env)
+    env['rack.request'].class.should.equal Rack::Request
+  end
 end
