@@ -18,7 +18,10 @@ module Rack
     attr_reader :env
 
     def self.new(env)
-      env["rack.request"] ||= super
+      unless env["rack.request"] and env["rack.request"].class == self
+        env["rack.request"] = super
+      end
+      env["rack.request"]
     end
 
     def initialize(env)
