@@ -102,63 +102,37 @@ module Rack
     end
     module_function :select_best_encoding
 
-    # The recommended manner in which to implement a contexting application
-    # is to define a method #context in which a new Context is instantiated.
-    #
-    # As a Context is a glorified block, it is highly recommended that you
-    # define the contextual block within the application's operational scope.
-    # This would typically the application as you're place into Rack's stack.
-    #
-    #   class MyObject
-    #     ...
-    #     def context app
-    #       Rack::Utils::Context.new app do |env|
-    #         do_stuff
-    #         response = app.call(env)
-    #         do_more_stuff
-    #       end
-    #     end
-    #     ...
-    #   end
-    #
-    # mobj = MyObject.new
-    # app = mobj.context other_app
-    # Rack::Handler::Mongrel.new app
-    class Context < Proc
-      alias_method :old_inspect, :inspect
+    # Context allows the use of a compatible middleware at different points
+    # in a request handling stack. A compatible middleware must define
+    # #context which should take the arguments env and app. The first of which
+    # would be the request environment. The second of which would be the rack
+    # application that the request would be forwarded to.
+    class Context
       attr_reader :for, :app
-      def initialize app_f, app_r
-        raise 'running context not provided' unless app_f
+
+      def initialize(app_f, app_r)
         raise 'running context does not respond to #context' unless app_f.respond_to? :context
-        raise 'application context not provided' unless app_r
-        raise 'application context does not respond to #call' unless app_r.respond_to? :call
-        @for = app_f
-        @app = app_r
+        @for, @app = app_f, app_r
       end
-      def inspect
-        "#{old_inspect} ==> #{@for.inspect} ==> #{@app.inspect}"
+
+      def call(env)
+        @for.context(env, @app)
       end
-      def context app_r
-        raise 'new application context not provided' unless app_r
-        raise 'new application context does not respond to #call' unless app_r.respond_to? :call
-        @for.context app_r
+
+      def recontext(app)
+        self.class.new(@for, app)
       end
-      def pretty_print pp
-        pp.text old_inspect
-        pp.nest 1 do
-          pp.breakable
-          pp.text '=for> '
-          pp.pp @for
-          pp.breakable
-          pp.text '=app> '
-          pp.pp @app
-        end
+
+      def context(env, app=@app)
+        recontext(app).call(env)
       end
     end
 
-    # A case-normalizing Hash, adjusting on [] and []=.
+    # A case-insensitive Hash that preserves the original case of a
+    # header when set.
     class HeaderHash < Hash
       def initialize(hash={})
+        @names = {}
         hash.each { |k, v| self[k] = v }
       end
 
@@ -167,15 +141,35 @@ module Rack
       end
 
       def [](k)
-        super capitalize(k)
+        super @names[k.downcase]
       end
 
       def []=(k, v)
-        super capitalize(k), v
+        delete k
+        @names[k.downcase] = k
+        super k, v
       end
 
-      def capitalize(k)
-        k.to_s.downcase.gsub(/^.|[-_\s]./) { |x| x.upcase }
+      def delete(k)
+        super @names.delete(k.downcase)
+      end
+
+      def include?(k)
+        @names.has_key? k.downcase
+      end
+
+      alias_method :has_key?, :include?
+      alias_method :member?, :include?
+      alias_method :key?, :include?
+
+      def merge!(other)
+        other.each { |k, v| self[k] = v }
+        self
+      end
+
+      def merge(other)
+        hash = dup
+        hash.merge! other
       end
     end
 

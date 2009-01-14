@@ -69,12 +69,12 @@ context "Rack::Deflater" do
     response1 = build_response(200, "Hello world!", "identity;q=0", "PATH_INFO" => "/")
     response1[0].should.equal(406)
     response1[1].should.equal({"Content-Type" => "text/plain"})
-    response1[2].should.equal("An acceptable encoding for the requested resource / could not be found.")
+    response1[2].should.equal(["An acceptable encoding for the requested resource / could not be found."])
 
     response2 = build_response(200, "Hello world!", "identity;q=0", "SCRIPT_NAME" => "/foo", "PATH_INFO" => "/bar")
     response2[0].should.equal(406)
     response2[1].should.equal({"Content-Type" => "text/plain"})
-    response2[2].should.equal("An acceptable encoding for the requested resource /foo/bar could not be found.")
+    response2[2].should.equal(["An acceptable encoding for the requested resource /foo/bar could not be found."])
   end
 
   specify "should handle gzip response with Last-Modified header" do
@@ -91,5 +91,15 @@ context "Rack::Deflater" do
     gz = Zlib::GzipReader.new(io)
     gz.read.should.equal("Hello World!")
     gz.close
+  end
+
+  specify "should do nothing when no-transform Cache-Control directive present" do
+    app = lambda { |env| [200, {'Cache-Control' => 'no-transform'}, ['Hello World!']] }
+    request = Rack::MockRequest.env_for("", "HTTP_ACCEPT_ENCODING" => "gzip")
+    response = Rack::Deflater.new(app).call(request)
+
+    response[0].should.equal(200)
+    response[1].should.not.include "Content-Encoding"
+    response[2].join.should.equal("Hello World!")
   end
 end
